@@ -7,9 +7,9 @@ Console.WriteLine("Logs from your program will appear here!");
 
 TcpListener server = new TcpListener(IPAddress.Any, 6379);
 server.Start();
+Socket client = server.AcceptSocket();
 
 while(true){
-    Socket client = server.AcceptSocket();
 
     // Read what the client sent (e.g. the PING command)
     byte[] buffer = new byte[1024];
