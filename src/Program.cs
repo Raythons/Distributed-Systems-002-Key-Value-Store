@@ -16,5 +16,6 @@ while(true){
     client.Receive(buffer);
 
     // Send back the PONG response
-    client.Send(Encoding.UTF8.GetBytes("+PONG\r\n"));
+    // Encoding.UTF8.GetBytes("+PONG\r\n")
+    client.Send("+PONG\r\n"u8);
 }
