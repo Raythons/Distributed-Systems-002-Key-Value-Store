@@ -9,40 +9,35 @@ public static class CommandDispatcher
         RespToken[]? tokens = RespParser.Parse(input);
 
         if (tokens is null || tokens.Length == 0)
-            return "-ERR invalid format\r\n";
+            return Resp.InvalidFmt;
 
         return tokens[0].Value.ToUpper() switch
         {
-            "PING" => "+PONG\r\n",
+            "PING" => Resp.Pong,
             "ECHO" => HandleEcho(tokens),
             "SET"  => HandleSet(tokens),
             "GET"  => HandleGet(tokens),
-            var cmd => $"-ERR unknown command '{cmd}'\r\n"
+            var cmd => Resp.Err($"unknown command '{cmd}'")
         };
     }
 
     // ----------------------------------------------------------
-    // ECHO handler
-    // tokens[0] = "ECHO", tokens[1] = the message
-    // ----------------------------------------------------------
     private static string HandleEcho(RespToken[] tokens)
     {
         if (tokens.Length < 2)
-            return "-ERR wrong number of arguments for 'echo'\r\n";
+            return Resp.Err("wrong number of arguments for 'echo'");
 
-        string arg = tokens[1].Value;
-        int len    = tokens[1].DeclaredLength;
-        return $"${len}\r\n{arg}\r\n";
+        return Resp.Bulk(tokens[1].Value);
     }
 
     // ----------------------------------------------------------
-    // SET handler — owns its own flag parsing (EX, PX, NX, XX)
+    // SET handler — owns its own flag parsing (EX, PX)
     // tokens[0]="SET"  tokens[1]=key  tokens[2]=value  [flags...]
     // ----------------------------------------------------------
     private static string HandleSet(RespToken[] tokens)
     {
         if (tokens.Length < 3)
-            return "-ERR wrong number of arguments for 'set'\r\n";
+            return Resp.Err("wrong number of arguments for 'set'");
 
         string key   = tokens[1].Value;
         string value = tokens[2].Value;
@@ -64,7 +59,7 @@ public static class CommandDispatcher
 
         Store.Set(key, value, ttl);
         Console.WriteLine($"[SET] key='{key}' value='{value}' ttl={ttl}");
-        return "+OK\r\n";
+        return Resp.Ok;
     }
 
     // ----------------------------------------------------------
@@ -74,14 +69,10 @@ public static class CommandDispatcher
     private static string HandleGet(RespToken[] tokens)
     {
         if (tokens.Length < 2)
-            return "-ERR wrong number of arguments for 'get'\r\n";
+            return Resp.Err("wrong number of arguments for 'get'");
 
-        string key    = tokens[1].Value;
-        string? value = Store.Get(key);
+        string? value = Store.Get(tokens[1].Value);
 
-        if (value is null)
-            return "$-1\r\n"; // RESP nil bulk string — key missing or expired
-
-        return $"${value.Length}\r\n{value}\r\n";
+        return value is null ? Resp.NilBulk : Resp.Bulk(value);
     }
 }
