@@ -9,16 +9,18 @@ public class RedisList : RedisValue
     private readonly List<string> _items = new();
 
     // Append to the right — returns new length
-    public int RPush(string value)
+    public int RPush(string[] values)
     {
-        _items.Add(value);
+        _items.AddRange(values);
         return _items.Count;
     }
 
     // Prepend to the left — returns new length
-    public int LPush(string value)
+    public int LPush(string[] values)
     {
-        _items.Insert(0, value);
+        // InsertRange shifts the entire list once! O(N) instead of O(N * values.Length)
+        // We reverse it because LPUSH a b c results in [c, b, a]
+        _items.InsertRange(0, values.Reverse());
         return _items.Count;
     }
 

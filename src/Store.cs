@@ -91,11 +91,7 @@ public static class Store
             return (0, Resp.WrongType);
         }
 
-        int newLen = 0;
-        foreach (var element in elements)
-            newLen = list.RPush(element);
-
-        return (newLen, null);
+        return (list.RPush(elements), null);
     }
 
     public static (int length, string? error) LPush(string key, string[] elements)
@@ -118,11 +114,7 @@ public static class Store
             return (0, Resp.WrongType);
         }
 
-        int newLen = 0;
-        foreach (var element in elements)
-            newLen = list.LPush(element);
-
-        return (newLen, null);
+        return (list.LPush(elements), null);
     }
 
     // ----------------------------------------------------------
