@@ -9,7 +9,8 @@ public static class CommandDispatcher
         { "ECHO",  new EchoCommand() },
         { "SET",   new SetCommand() },
         { "GET",   new GetCommand() },
-        { "RPUSH", new RPushCommand() }
+        { "RPUSH", new RPushCommand() },
+        { "LRANGE", new LRangeCommand() }
     };
 
     public static string Dispatch(string input)

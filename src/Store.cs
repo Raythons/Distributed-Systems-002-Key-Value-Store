@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 
 // ============================================================
 // Store: the single source of truth for all key/value data.
@@ -56,10 +57,19 @@ public static class Store
     }
 
     // ----------------------------------------------------------
-    // RPUSH key element [element ...]
-    // Creates list if it doesn't exist.
-    // Returns (newLength, error).
+    // GetList — Helper for list-specific commands.
+    // Returns (list, error)
     // ----------------------------------------------------------
+    public static (RedisList? list, string? error) GetList(string key)
+    {
+        var entry = GetEntry(key);
+        if (entry is null) return (null, null);
+
+        if (entry.Value.Value is not RedisList rl)
+            return (null, Resp.WrongType);
+
+        return (rl, null);
+    }
     public static (int length, string? error) RPush(string key, string[] elements)
     {
         var entry = GetEntry(key);
@@ -68,7 +78,6 @@ public static class Store
 
         if (entry is null)
         {
-            // Key doesn't exist — create a new list
             list = new RedisList();
             Storage[key] = new StoreEntry(list, null);
         }

@@ -24,7 +24,7 @@ public class RedisList : RedisValue
 
     public int Count => _items.Count;
 
-    // LRANGE start stop — supports negative indices like real Redis
+    // LRANGE
     public List<string> GetRange(int start, int stop)
     {
         int count = _items.Count;
