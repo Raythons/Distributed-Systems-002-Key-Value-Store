@@ -167,4 +167,15 @@ public static class Store
             await Task.Delay(100);
         }
     }
+    public static (int length, string? error) LLen(string key)
+    {
+        var entry = GetEntry(key);
+        if (entry is null) return (0, null);
+
+        if (entry.Value.Value is not RedisList rl)
+            return (0, Resp.WrongType);
+
+        return (rl.Count, null);
+    }
+
 }
