@@ -178,4 +178,22 @@ public static class Store
         return (rl.Count, null);
     }
 
+    public static (List<string>? items, string? error) LPop(string key, int count = 1)
+    {
+        var (list, error) = GetList(key);
+        if (error != null) return (null, error);
+        
+        if (list == null || list.Count == 0)
+            return (null, null);
+
+        var popped = list.LPop(count);
+
+        // Redis cleans up empty keys automatically
+        if (list.Count == 0)
+        {
+            Storage.TryRemove(key, out _);
+        }
+
+        return (popped, null);
+    }
 }

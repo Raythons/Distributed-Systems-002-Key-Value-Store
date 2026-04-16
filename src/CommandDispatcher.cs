@@ -11,7 +11,8 @@ public static class CommandDispatcher
         { "GET",   new GetCommand() },
         { "RPUSH", new RPushCommand() },
         { "LPUSH", new LPushCommand() },
-        {"LLEN", new LlenCommand()},
+        { "LPOP",  new LPopCommand() },
+        { "LLEN",  new LlenCommand() },
         { "LRANGE", new LRangeCommand() }
     };
 

@@ -24,6 +24,16 @@ public class RedisList : RedisValue
         return _items.Count;
     }
 
+    public List<string> LPop(int count)
+    {
+        int toRemove = Math.Min(count, _items.Count);
+        if (toRemove == 0) return new List<string>();
+
+        var popped = _items.GetRange(0, toRemove);
+        _items.RemoveRange(0, toRemove);
+        return popped;
+    }
+
     public int Count => _items.Count;
 
     // LRANGE
