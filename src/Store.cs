@@ -1,31 +1,24 @@
 using System.Collections.Concurrent;
+
 // ============================================================
 // Store: the single source of truth for all key/value data.
 // ConcurrentDictionary because multiple client Tasks + the
 // background expirer can all touch Storage at the same time.
 // ============================================================
-public record struct StoreEntry(string Value, DateTime? Expiry);
-
+public record struct StoreEntry(RedisValue Value, DateTime? Expiry);
 public static class Store
 {
     public static ConcurrentDictionary<string, StoreEntry> Storage { get; } = new();
 
-    public static void Set(string key, string value, TimeSpan? ttl = null)
-    {
-        DateTime? expiry = ttl.HasValue ? DateTime.UtcNow.Add(ttl.Value) : null;
-        Storage[key] = new StoreEntry(value, expiry);
-    }
-
     // ----------------------------------------------------------
-    // Get — lazy expiration: check TTL on every read
-    // Returns null if the key is missing or has expired.
+    // Try to get the raw entry, checking for expiry.
+    // Returns null if missing or expired.
     // ----------------------------------------------------------
-    public static string? Get(string key)
+    private static StoreEntry? GetEntry(string key)
     {
         if (!Storage.TryGetValue(key, out StoreEntry entry))
-            return null; // key doesn't exist
+            return null;
 
-        // Lazy expiration check
         if (entry.Expiry.HasValue && DateTime.UtcNow > entry.Expiry.Value)
         {
             Storage.TryRemove(key, out _);
@@ -33,10 +26,74 @@ public static class Store
             return null;
         }
 
-        return entry.Value;
+        return entry;
     }
 
+    // ----------------------------------------------------------
+    // SET key value [ttl]
+    // Always overwrites. Creates a RedisString.
+    // ----------------------------------------------------------
+    public static void Set(string key, string value, TimeSpan? ttl = null)
+    {
+        DateTime? expiry = ttl.HasValue ? DateTime.UtcNow.Add(ttl.Value) : null;
+        Storage[key] = new StoreEntry(new RedisString(value), expiry);
+    }
 
+    // ----------------------------------------------------------
+    // GET key
+    // Returns null if missing, expired, or wrong type.
+    // Returns Resp.WrongType error string if it's not a string.
+    // ----------------------------------------------------------
+    public static (string? value, string? error) Get(string key)
+    {
+        var entry = GetEntry(key);
+        if (entry is null) return (null, null);
+
+        if (entry.Value.Value is not RedisString rs)
+            return (null, Resp.WrongType);
+
+        return (rs.Value, null);
+    }
+
+    // ----------------------------------------------------------
+    // RPUSH key element [element ...]
+    // Creates list if it doesn't exist.
+    // Returns (newLength, error).
+    // ----------------------------------------------------------
+    public static (int length, string? error) RPush(string key, string[] elements)
+    {
+        var entry = GetEntry(key);
+
+        RedisList list;
+
+        if (entry is null)
+        {
+            // Key doesn't exist — create a new list
+            list = new RedisList();
+            Storage[key] = new StoreEntry(list, null);
+        }
+        else if (entry.Value.Value is RedisList existingList)
+        {
+            list = existingList;
+        }
+        else
+        {
+            // Key exists but holds a different type
+            return (0, Resp.WrongType);
+        }
+
+        int newLen = 0;
+        foreach (var element in elements)
+            newLen = list.RPush(element);
+
+        return (newLen, null);
+    }
+
+    // ----------------------------------------------------------
+    // StartActiveExpirerAsync — background task that runs forever.
+    // Every 100ms: randomly sample up to 20 keys with TTLs,
+    // delete expired ones. If >25% expired, run again immediately.
+    // ----------------------------------------------------------
     public static async Task StartActiveExpirerAsync()
     {
         var rng = new Random();
@@ -50,10 +107,9 @@ public static class Store
             {
                 shouldRunAgain = false;
 
-                // Collect up to 20 keys that actually have a TTL set
                 var candidates = Storage
                     .Where(kv => kv.Value.Expiry.HasValue)
-                    .OrderBy(_ => rng.Next())       
+                    .OrderBy(_ => rng.Next())
                     .Take(20)
                     .ToList();
 
@@ -72,8 +128,6 @@ public static class Store
                     }
                 }
 
-                // If >25% of the sample was expired
-                // much more garbage — run again without sleeping.
                 if (expiredCount > candidates.Count * 0.25)
                 {
                     shouldRunAgain = true;
@@ -82,7 +136,6 @@ public static class Store
 
             } while (shouldRunAgain);
 
-            // Sleep before the next sweep
             await Task.Delay(100);
         }
     }

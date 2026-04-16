@@ -6,6 +6,7 @@ public static class Resp
     public const string NilBulk     = "$-1\r\n";
     public const string InvalidFmt  = "-ERR invalid format\r\n";
     public const string UnknownCmd  = "-ERR unknown command\r\n";
+    public const string WrongType   = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
     public const string Crlf        = "\r\n";
 
     public static string Bulk(string value) =>
