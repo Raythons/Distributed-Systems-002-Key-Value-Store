@@ -10,6 +10,7 @@ public static class CommandDispatcher
         { "SET",   new SetCommand() },
         { "GET",   new GetCommand() },
         { "RPUSH", new RPushCommand() },
+        { "LPUSH", new LPushCommand() },
         { "LRANGE", new LRangeCommand() }
     };
 

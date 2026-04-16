@@ -98,6 +98,33 @@ public static class Store
         return (newLen, null);
     }
 
+    public static (int length, string? error) LPush(string key, string[] elements)
+    {
+        var entry = GetEntry(key);
+
+        RedisList list;
+
+        if (entry is null)
+        {
+            list = new RedisList();
+            Storage[key] = new StoreEntry(list, null);
+        }
+        else if (entry.Value.Value is RedisList existingList)
+        {
+            list = existingList;
+        }
+        else
+        {
+            return (0, Resp.WrongType);
+        }
+
+        int newLen = 0;
+        foreach (var element in elements)
+            newLen = list.LPush(element);
+
+        return (newLen, null);
+    }
+
     // ----------------------------------------------------------
     // StartActiveExpirerAsync — background task that runs forever.
     // Every 100ms: randomly sample up to 20 keys with TTLs,
