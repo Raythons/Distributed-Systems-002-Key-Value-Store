@@ -4,6 +4,7 @@ public static class Resp
     public const string Ok          = "+OK\r\n";
     public const string Pong        = "+PONG\r\n";
     public const string NilBulk     = "$-1\r\n";
+    public const string NilArray    = "*-1\r\n";    // BLPOP timeout: null multi-bulk
     public const string EmptyArray  = "*0\r\n";
     public const string InvalidFmt  = "-ERR invalid format\r\n";
     public const string UnknownCmd  = "-ERR unknown command\r\n";

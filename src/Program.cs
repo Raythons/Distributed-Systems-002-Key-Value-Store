@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
+ThreadPool.SetMaxThreads(1,1);
 // bind(fd=5, port=6379)
 TcpListener server = new TcpListener(IPAddress.Any, 6379);
 server.Start(); // listen(fd=5, backlog)
@@ -42,7 +43,7 @@ async Task HandleConnection(Socket client)
             string received = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
             Console.WriteLine($"[Handler {client.Handle}] Received: {received.TrimEnd()}");
 
-            string response = CommandDispatcher.Dispatch(received);
+            string response = await CommandDispatcher.DispatchAsync(received);
             await client.SendAsync(System.Text.Encoding.UTF8.GetBytes(response));
         }
     }

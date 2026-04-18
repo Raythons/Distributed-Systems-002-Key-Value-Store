@@ -12,6 +12,39 @@ public static class Store
     public static ConcurrentDictionary<string, StoreEntry> Storage { get; } = new();
 
     // ----------------------------------------------------------
+    // Waiter queues for BLPOP.
+    // Each queue entry is a TCS that resolves with the key name
+    // that received data, waking the waiting client.
+    // ----------------------------------------------------------
+    private static readonly ConcurrentDictionary<string, Queue<TaskCompletionSource<string?>>> _waiters
+        = new(StringComparer.OrdinalIgnoreCase);
+
+    // Called by BlPopCommand — registers interest in a key.
+    public static void RegisterWaiter(string key, TaskCompletionSource<string?> tcs)
+    {
+        var queue = _waiters.GetOrAdd(key, _ => new Queue<TaskCompletionSource<string?>>());
+        lock (queue) { queue.Enqueue(tcs); }
+    }
+
+    // Called by LPush / RPush after writing data.
+    // Wakes the FIRST waiting client for this key.
+    private static void NotifyWaiters(string key)
+    {
+        if (!_waiters.TryGetValue(key, out var queue)) return;
+        lock (queue)
+        {
+            while (queue.Count > 0)
+            {
+                var tcs = queue.Dequeue();
+                // TrySetResult returns false if the client already timed out — skip it.
+                if (tcs.TrySetResult(key)) break;
+            }
+            if (queue.Count == 0)
+                _waiters.TryRemove(key, out _);
+        }
+    }
+
+    // ----------------------------------------------------------
     // Try to get the raw entry, checking for expiry.
     // Returns null if missing or expired.
     // ----------------------------------------------------------
@@ -87,11 +120,12 @@ public static class Store
         }
         else
         {
-            // Key exists but holds a different type
             return (0, Resp.WrongType);
         }
 
-        return (list.RPush(elements), null);
+        int len = list.RPush(elements);
+        NotifyWaiters(key);   // Wake any BLPOP clients waiting on this key
+        return (len, null);
     }
 
     public static (int length, string? error) LPush(string key, string[] elements)
@@ -114,7 +148,9 @@ public static class Store
             return (0, Resp.WrongType);
         }
 
-        return (list.LPush(elements), null);
+        int len = list.LPush(elements);
+        NotifyWaiters(key);   // Wake any BLPOP clients waiting on this key
+        return (len, null);
     }
 
     // ----------------------------------------------------------
