@@ -1,29 +1,37 @@
-using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 // ============================================================
 // Store: the single source of truth for all key/value data.
-// ConcurrentDictionary because multiple client Tasks + the
-// background expirer can all touch Storage at the same time.
+// In our single-threaded model, we use simple Dictionaries 
+// because only one command/task runs at a time on the main thread.
 // ============================================================
 public record struct StoreEntry(RedisValue Value, DateTime? Expiry);
+
 public static class Store
 {
-    public static ConcurrentDictionary<string, StoreEntry> Storage { get; } = new();
+    // Core data storage - no longer needs to be Concurrent
+    public static Dictionary<string, StoreEntry> Storage { get; } = new(StringComparer.Ordinal);
 
     // ----------------------------------------------------------
     // Waiter queues for BLPOP.
     // Each queue entry is a TCS that resolves with the key name
     // that received data, waking the waiting client.
     // ----------------------------------------------------------
-    private static readonly ConcurrentDictionary<string, Queue<TaskCompletionSource<string?>>> _waiters
-        = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, Queue<TaskCompletionSource<string?>>> _waiters
+        = new(StringComparer.Ordinal);
 
     // Called by BlPopCommand — registers interest in a key.
     public static void RegisterWaiter(string key, TaskCompletionSource<string?> tcs)
     {
-        var queue = _waiters.GetOrAdd(key, _ => new Queue<TaskCompletionSource<string?>>());
-        lock (queue) { queue.Enqueue(tcs); }
+        if (!_waiters.TryGetValue(key, out var queue))
+        {
+            queue = new Queue<TaskCompletionSource<string?>>();
+            _waiters[key] = queue;
+        }
+        queue.Enqueue(tcs);
     }
 
     // Called by LPush / RPush after writing data.
@@ -31,17 +39,16 @@ public static class Store
     private static void NotifyWaiters(string key)
     {
         if (!_waiters.TryGetValue(key, out var queue)) return;
-        lock (queue)
+
+        while (queue.Count > 0)
         {
-            while (queue.Count > 0)
-            {
-                var tcs = queue.Dequeue();
-                // TrySetResult returns false if the client already timed out — skip it.
-                if (tcs.TrySetResult(key)) break;
-            }
-            if (queue.Count == 0)
-                _waiters.TryRemove(key, out _);
+            var tcs = queue.Dequeue();
+            // TrySetResult returns false if the client already timed out — skip it.
+            if (tcs.TrySetResult(key)) break;
         }
+
+        if (queue.Count == 0)
+            _waiters.Remove(key);
     }
 
     // ----------------------------------------------------------
@@ -55,7 +62,7 @@ public static class Store
 
         if (entry.Expiry.HasValue && DateTime.UtcNow > entry.Expiry.Value)
         {
-            Storage.TryRemove(key, out _);
+            Storage.Remove(key);
             Console.WriteLine($"[Store] Lazy-expired key: '{key}'");
             return null;
         }
@@ -103,10 +110,10 @@ public static class Store
 
         return (rl, null);
     }
+
     public static (int length, string? error) RPush(string key, string[] elements)
     {
         var entry = GetEntry(key);
-
         RedisList list;
 
         if (entry is null)
@@ -131,7 +138,6 @@ public static class Store
     public static (int length, string? error) LPush(string key, string[] elements)
     {
         var entry = GetEntry(key);
-
         RedisList list;
 
         if (entry is null)
@@ -154,7 +160,7 @@ public static class Store
     }
 
     // ----------------------------------------------------------
-    // StartActiveExpirerAsync — background task that runs forever.
+    // StartActiveExpirerAsync — background task that runs on the event loop.
     // Every 100ms: randomly sample up to 20 keys with TTLs,
     // delete expired ones. If >25% expired, run again immediately.
     // ----------------------------------------------------------
@@ -171,6 +177,7 @@ public static class Store
             {
                 shouldRunAgain = false;
 
+                // Take a sample of keys that have an expiry
                 var candidates = Storage
                     .Where(kv => kv.Value.Expiry.HasValue)
                     .OrderBy(_ => rng.Next())
@@ -186,7 +193,7 @@ public static class Store
                 {
                     if (kv.Value.Expiry!.Value < now)
                     {
-                        Storage.TryRemove(kv.Key, out _);
+                        Storage.Remove(kv.Key);
                         expiredCount++;
                         Console.WriteLine($"[Expirer] Actively expired key: '{kv.Key}'");
                     }
@@ -203,6 +210,7 @@ public static class Store
             await Task.Delay(100);
         }
     }
+
     public static (int length, string? error) LLen(string key)
     {
         var entry = GetEntry(key);
@@ -227,7 +235,7 @@ public static class Store
         // Redis cleans up empty keys automatically
         if (list.Count == 0)
         {
-            Storage.TryRemove(key, out _);
+            Storage.Remove(key);
         }
 
         return (popped, null);
